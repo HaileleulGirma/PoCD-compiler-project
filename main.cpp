@@ -1,4 +1,3 @@
-//can record multiple line appearances of a token
 #include <iostream>
 #include <fstream>
 #include <cctype>
@@ -53,19 +52,54 @@ std::string getTokenTypeName(TokenType type) {
     }
 }
 
+class RuntimeEnvironment {
+private:
+    std::unordered_map<std::string, float> variables;
+
+public:
+    void setVariable(const std::string& name, float value) {
+        variables[name] = value;
+    }
+
+    float getVariable(const std::string& name) const {
+        auto it = variables.find(name);
+        if (it != variables.end()) {
+            return it->second;
+        } else {
+            std::cerr << "Error: Variable '" << name << "' not found." << std::endl;
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    bool variableExists(const std::string& name) const {
+        return variables.find(name) != variables.end();
+    }
+
+    void printAllVariables() const {
+        std::cout << "\nVariable Values:\n";
+        for (const auto& entry : variables) {
+            std::cout << entry.first << ": " << entry.second << std::endl;
+        }
+    }
+};
+
 class Lexer {
 private:
     std::ifstream inputFile;
     size_t lineNumber;
     std::unordered_map<std::string, std::vector<Token>> symbolTable;
+    bool fileOpenError;
 
 public:
     Lexer(const std::string& filename) : inputFile(appendExtension(filename)), lineNumber(1) {
-        if (!inputFile.is_open()) {
-            std::cerr << "Error opening file: " << filename << std::endl;
-            exit(EXIT_FAILURE);
-        }
+    if (!inputFile.is_open()) {
+        std::cerr << "Error opening file: " << filename << std::endl;
+        fileOpenError = true;
+    } else {
+        fileOpenError = false;
     }
+}
+
 
     Token getNextToken() {
         char currentChar;
@@ -103,16 +137,21 @@ public:
         return Token(END, "");
     }
 
-    void printSymbolTable() {
-        std::cout << "\nSymbol Table:\n";
-        for (const auto& entry : symbolTable) {
-            std::cout << "Token Name: " << entry.first << std::endl;
-            for (const Token& token : entry.second) {
-                std::cout << "\tType: " << getTokenTypeName(token.type)
-                          << ", Value: " << token.value << ", Line Number: " << token.lineNumber << std::endl;
-            }
+    void printSymbolTable() const {
+    std::cout << "\nSymbol Table:\n";
+    for (const auto& entry : symbolTable) {
+        std::cout << "Token Name: " << entry.first << std::endl;
+        for (const Token& token : entry.second) {
+            std::cout << "\tType: " << getTokenTypeName(token.type)
+                      << ", Value: " << token.value << ", Line Number: " << token.lineNumber << std::endl;
         }
     }
+}
+
+        bool hasFileOpenError() const {
+        return fileOpenError;
+    }
+
 
 private:
     Token parseIdentifier(char firstChar) {
@@ -162,11 +201,13 @@ private:
         return c == ',' || c == ';' || c == '(' || c == ')' || c == '{' || c == '}' || c == '[' || c == ']' || c == '.';
     }
 
-    Token insertIntoSymbolTable(TokenType type, const std::string& value, size_t lineNum) {
-        Token token(type, value, lineNum);
-        symbolTable[value].push_back(token);
-        return token;
-    }
+Token insertIntoSymbolTable(TokenType type, const std::string& value, size_t lineNum) {
+    Token token(type, value, lineNum);
+    symbolTable[value].push_back(token);
+    return token;
+}
+
+
 
     std::string appendExtension(const std::string& filename) {
         if (filename.find_last_of(".") == std::string::npos) {
@@ -176,32 +217,50 @@ private:
     }
 };
 
+
+
 class RecursiveDescentParser {
 private:
     Lexer& lexer;
     Token currentToken;
+    RuntimeEnvironment env;
+    bool hadError;
 
 public:
-    RecursiveDescentParser(Lexer& lexer) : lexer(lexer) {
+    RecursiveDescentParser(Lexer& lexer) : lexer(lexer), hadError(false) {
         
         currentToken = lexer.getNextToken();
     }
 
     void parseProgram() {
-        parseStatementList();
+    parseStatementList();
+
+    if (!hadError) {
         match(END);
         std::cout << "Parsing successful!" << std::endl;
+    } else {
+        std::cout << "Parsing failed due to errors." << std::endl;
+    }
+}
+
+
+    void evaluateProgram() {
+        if (!hadError) {
+            env.printAllVariables();
+        }
     }
 
 private:
     void parseStatementList() {
-        while (currentToken.type != END) {
+        while (currentToken.type != END && !hadError) {
             parseStatement();
             match(PUNCTUATION_SYMBOL, ";");
         }
     }
 
     void parseStatement() {
+        if (hadError) return;  
+
         if (currentToken.type == IDENTIFIER) {
             parseAssignment();
         } else {
@@ -210,46 +269,108 @@ private:
     }
 
     void parseAssignment() {
+        if (hadError) return;  
+
+        std::string varName = currentToken.value;
         match(IDENTIFIER);
 
-        if (currentToken.type == OPERATOR && isCompoundAssignment(currentToken.value)) {
+        if (currentToken.type == OPERATOR) {
+            std::string op = currentToken.value;
             match(OPERATOR);
-            parseExpression();
-        } else {
-            match(OPERATOR, "=");
-            parseExpression();
+            float rhs = parseExpression();
+
+            if (op == "=") {
+                env.setVariable(varName, rhs);
+            } else if (env.variableExists(varName)) {
+                if (op == "+=") {
+                    env.setVariable(varName, env.getVariable(varName) + rhs);
+                } else if (op == "-=") {
+                    env.setVariable(varName, env.getVariable(varName) - rhs);
+                } else if (op == "*=") {
+                    env.setVariable(varName, env.getVariable(varName) * rhs);
+                } else if (op == "/=") {
+                    if (rhs == 0) {
+                        reportError("Division by zero", currentToken);
+                    }
+                    env.setVariable(varName, env.getVariable(varName) / rhs);
+                } else {
+                    reportError("Invalid assignment operator", currentToken);
+                }
+            } else {
+                reportError("Variable not found", currentToken);
+            }
         }
     }
 
-    void parseExpression() {
-        parseTerm();
+    float parseExpression() {
+        if (hadError) return 0;  
+
+        float result = parseTerm();
         while (currentToken.type == OPERATOR && (currentToken.value == "+" || currentToken.value == "-")) {
+            std::string op = currentToken.value;
             match(OPERATOR);
-            parseTerm();
+            float term = parseTerm();
+
+            if (op == "+") {
+                result += term;
+            } else if (op == "-") {
+                result -= term;
+            }
         }
+        return result;
     }
 
-    void parseTerm() {
-        parseFactor();
+    float parseTerm() {
+        if (hadError) return 0;  
+
+        float result = parseFactor();
         while (currentToken.type == OPERATOR && (currentToken.value == "*" || currentToken.value == "/")) {
+            std::string op = currentToken.value;
             match(OPERATOR);
-            parseFactor();
+            float factor = parseFactor();
+
+            if (op == "*") {
+                result *= factor;
+            } else if (op == "/") {
+                if (factor == 0) {
+                    reportError("Division by zero", currentToken);
+                }
+                result /= factor;
+            }
         }
+        return result;
     }
 
-    void parseFactor() {
-        if (currentToken.type == IDENTIFIER || currentToken.type == CONSTANT) {
-            match(currentToken.type);
+    float parseFactor() {
+        if (hadError) return 0;  
+
+        if (currentToken.type == IDENTIFIER) {
+            std::string varName = currentToken.value;
+            match(IDENTIFIER);
+
+            if (env.variableExists(varName)) {
+                return env.getVariable(varName);
+            } else {
+                reportError("Variable not found", currentToken);
+            }
+        } else if (currentToken.type == CONSTANT) {
+            float constantValue = std::stof(currentToken.value);
+            match(CONSTANT);
+            return constantValue;
         } else if (currentToken.type == SPECIAL_CHARACTER && currentToken.value == "(") {
             match(SPECIAL_CHARACTER);
-            parseExpression();
+            float expressionValue = parseExpression();
             match(SPECIAL_CHARACTER, ")");
+            return expressionValue;
         } else {
             reportError("Expected identifier, constant, or '(' for factor", currentToken);
         }
+        return 0;  
     }
 
     void match(TokenType expectedType, const std::string& expectedValue = "") {
+        if (hadError) return;  
+
         if (currentToken.type == expectedType && (expectedValue.empty() || currentToken.value == expectedValue)) {
             std::cout << "Matched: " << getTokenTypeName(expectedType) << ", Value: " << currentToken.value << std::endl;
             currentToken = lexer.getNextToken();
@@ -261,22 +382,23 @@ private:
     void reportError(const std::string& message, const Token& token) {
         std::cerr << "Error: " << message << ". Found " << getTokenTypeName(token.type)
                   << " '" << token.value << "' at line " << token.lineNumber << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    bool isCompoundAssignment(const std::string& op) {
-        return op == "+=" || op == "-=" || op == "*=" || op == "/=";
+        hadError = true;
+        
     }
 };
+
+
+
 
 int main() {
     int choice;
 
     do {
         std::cout << "\n\n\t\t******WELCOME TO GROUP 3 PRINCIPLES OF COMPILER DESIGN PROJECT******\n";
-        std::cout << "MENU\n";
+        std::cout << "\tMENU\n";
         std::cout << "1. COMPILE A PROGRAM FROM TEXT FILE\n";
-        std::cout << "2. EXIT PROGRAM\n";
+        std::cout << "2. CLEAR SCREEN\n";
+        std::cout << "3. EXIT PROGRAM\n";
         std::cin >> choice;
 
         switch (choice) {
@@ -286,20 +408,30 @@ int main() {
                 std::cin >> filename;
 
                 Lexer lexer(filename);
+
+                if (lexer.hasFileOpenError()) {
+                    std::cout << "File opening failed. Please check the filename and try again." << std::endl;
+                    break;
+                }
+
                 RecursiveDescentParser parser(lexer);
 
                 parser.parseProgram();
                 lexer.printSymbolTable();
+                parser.evaluateProgram();
                 break;
             }
             case 2:
+                std::system("cls");
+                break;
+            case 3:
                 std::cout << "Exiting the program.\n";
                 break;
             default:
                 std::cout << "Invalid choice. Please try again.\n";
         }
 
-    } while (choice != 2);
+    } while (choice != 3);
 
     return 0;
 }
