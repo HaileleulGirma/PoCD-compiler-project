@@ -2,7 +2,7 @@
 #include <fstream>
 #include <cctype>
 #include <string>
-#include <unordered_map>a
+#include <unordered_map>
 #include <vector>
 
 enum TokenType {
@@ -54,14 +54,14 @@ std::string getTokenTypeName(TokenType type) {
 
 class RuntimeEnvironment {
 private:
-    std::unordered_map<std::string, int> variables;
+    std::unordered_map<std::string, float> variables;
 
 public:
-    void setVariable(const std::string& name, int value) {
+    void setVariable(const std::string& name, float value) {
         variables[name] = value;
     }
 
-    int getVariable(const std::string& name) const {
+    float getVariable(const std::string& name) const {
         auto it = variables.find(name);
         if (it != variables.end()) {
             return it->second;
@@ -134,15 +134,16 @@ public:
     }
 
     void printSymbolTable() const {
-        std::cout << "\nSymbol Table:\n";
-        for (const auto& entry : symbolTable) {
-            std::cout << "Token Name: " << entry.first << std::endl;
-            for (const Token& token : entry.second) {
-                std::cout << "\tType: " << getTokenTypeName(token.type)
-                          << ", Value: " << token.value << ", Line Number: " << token.lineNumber << std::endl;
-            }
+    std::cout << "\nSymbol Table:\n";
+    for (const auto& entry : symbolTable) {
+        std::cout << "Token Name: " << entry.first << std::endl;
+        for (const Token& token : entry.second) {
+            std::cout << "\tType: " << getTokenTypeName(token.type)
+                      << ", Value: " << token.value << ", Line Number: " << token.lineNumber << std::endl;
         }
     }
+}
+
 
 private:
     Token parseIdentifier(char firstChar) {
@@ -192,11 +193,13 @@ private:
         return c == ',' || c == ';' || c == '(' || c == ')' || c == '{' || c == '}' || c == '[' || c == ']' || c == '.';
     }
 
-    Token insertIntoSymbolTable(TokenType type, const std::string& value, size_t lineNum) {
-        Token token(type, value, lineNum);
-        symbolTable[value].push_back(token);
-        return token;
-    }
+Token insertIntoSymbolTable(TokenType type, const std::string& value, size_t lineNum) {
+    Token token(type, value, lineNum);
+    symbolTable[value].push_back(token);
+    return token;
+}
+
+
 
     std::string appendExtension(const std::string& filename) {
         if (filename.find_last_of(".") == std::string::npos) {
@@ -206,7 +209,7 @@ private:
     }
 };
 
-
+// ... (unchanged code above)
 
 class RecursiveDescentParser {
 private:
@@ -217,7 +220,7 @@ private:
 
 public:
     RecursiveDescentParser(Lexer& lexer) : lexer(lexer), hadError(false) {
-        
+        // Initialize with the first token
         currentToken = lexer.getNextToken();
     }
 
@@ -241,14 +244,14 @@ public:
 
 private:
     void parseStatementList() {
-        while (currentToken.type != END && !hadError) {  
+        while (currentToken.type != END && !hadError) {  // Check for hadError
             parseStatement();
             match(PUNCTUATION_SYMBOL, ";");
         }
     }
 
     void parseStatement() {
-        if (hadError) return;  
+        if (hadError) return;  // Check if hadError is true before parsing
 
         if (currentToken.type == IDENTIFIER) {
             parseAssignment();
@@ -258,7 +261,7 @@ private:
     }
 
     void parseAssignment() {
-        if (hadError) return;  
+        if (hadError) return;  // Check if hadError is true before parsing
 
         std::string varName = currentToken.value;
         match(IDENTIFIER);
@@ -266,7 +269,7 @@ private:
         if (currentToken.type == OPERATOR) {
             std::string op = currentToken.value;
             match(OPERATOR);
-            int rhs = parseExpression();
+            float rhs = parseExpression();
 
             if (op == "=") {
                 env.setVariable(varName, rhs);
@@ -291,14 +294,14 @@ private:
         }
     }
 
-    int parseExpression() {
-        if (hadError) return 0;  
+    float parseExpression() {
+        if (hadError) return 0;  // Return a default value if there's an error
 
-        int result = parseTerm();
+        float result = parseTerm();
         while (currentToken.type == OPERATOR && (currentToken.value == "+" || currentToken.value == "-")) {
             std::string op = currentToken.value;
             match(OPERATOR);
-            int term = parseTerm();
+            float term = parseTerm();
 
             if (op == "+") {
                 result += term;
@@ -309,14 +312,14 @@ private:
         return result;
     }
 
-    int parseTerm() {
-        if (hadError) return 0;  
+    float parseTerm() {
+        if (hadError) return 0;  // Return a default value if there's an error
 
-        int result = parseFactor();
+        float result = parseFactor();
         while (currentToken.type == OPERATOR && (currentToken.value == "*" || currentToken.value == "/")) {
             std::string op = currentToken.value;
             match(OPERATOR);
-            int factor = parseFactor();
+            float factor = parseFactor();
 
             if (op == "*") {
                 result *= factor;
@@ -330,8 +333,8 @@ private:
         return result;
     }
 
-    int parseFactor() {
-        if (hadError) return 0;  
+    float parseFactor() {
+        if (hadError) return 0;  // Return a default value if there's an error
 
         if (currentToken.type == IDENTIFIER) {
             std::string varName = currentToken.value;
@@ -343,22 +346,22 @@ private:
                 reportError("Variable not found", currentToken);
             }
         } else if (currentToken.type == CONSTANT) {
-            int constantValue = std::stoi(currentToken.value);
+            float constantValue = std::stof(currentToken.value);
             match(CONSTANT);
             return constantValue;
         } else if (currentToken.type == SPECIAL_CHARACTER && currentToken.value == "(") {
             match(SPECIAL_CHARACTER);
-            int expressionValue = parseExpression();
+            float expressionValue = parseExpression();
             match(SPECIAL_CHARACTER, ")");
             return expressionValue;
         } else {
             reportError("Expected identifier, constant, or '(' for factor", currentToken);
         }
-        return 0;  
+        return 0;  // This return is just to satisfy the compiler; it should never be reached.
     }
 
     void match(TokenType expectedType, const std::string& expectedValue = "") {
-        if (hadError) return;  
+        if (hadError) return;  // Check if hadError is true before parsing
 
         if (currentToken.type == expectedType && (expectedValue.empty() || currentToken.value == expectedValue)) {
             std::cout << "Matched: " << getTokenTypeName(expectedType) << ", Value: " << currentToken.value << std::endl;
@@ -372,11 +375,11 @@ private:
         std::cerr << "Error: " << message << ". Found " << getTokenTypeName(token.type)
                   << " '" << token.value << "' at line " << token.lineNumber << std::endl;
         hadError = true;
-        
+        // Optional: Implement error recovery or consume tokens until a recovery point
     }
 };
 
-
+// ... (unchanged code below)
 
 
 int main() {
@@ -384,9 +387,10 @@ int main() {
 
     do {
         std::cout << "\n\n\t\t******WELCOME TO GROUP 3 PRINCIPLES OF COMPILER DESIGN PROJECT******\n";
-        std::cout << "MENU\n";
+        std::cout << "\tMENU\n";
         std::cout << "1. COMPILE A PROGRAM FROM TEXT FILE\n";
-        std::cout << "2. EXIT PROGRAM\n";
+        std::cout << "2. CLEAR SCREEN\n";
+        std::cout << "3. EXIT PROGRAM\n";
         std::cin >> choice;
 
         switch (choice) {
@@ -396,22 +400,25 @@ int main() {
                 std::cin >> filename;
 
                 Lexer lexer(filename);
-                lexer.printSymbolTable();
+
                 RecursiveDescentParser parser(lexer);
 
                 parser.parseProgram();
-
+                lexer.printSymbolTable();
                 parser.evaluateProgram();
                 break;
             }
             case 2:
+                std::system("cls");
+                break;
+            case 3:
                 std::cout << "Exiting the program.\n";
                 break;
             default:
                 std::cout << "Invalid choice. Please try again.\n";
         }
 
-    } while (choice != 2);
+    } while (choice != 3);
 
     return 0;
 }
