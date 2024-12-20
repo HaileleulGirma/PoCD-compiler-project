@@ -1,4 +1,3 @@
-//can record multiple line appearances of a token
 #include <iostream>
 #include <fstream>
 #include <cctype>
@@ -53,6 +52,37 @@ std::string getTokenTypeName(TokenType type) {
     }
 }
 
+class RuntimeEnvironment {
+private:
+    std::unordered_map<std::string, int> variables;
+
+public:
+    void setVariable(const std::string& name, int value) {
+        variables[name] = value;
+    }
+
+    int getVariable(const std::string& name) const {
+        auto it = variables.find(name);
+        if (it != variables.end()) {
+            return it->second;
+        } else {
+            std::cerr << "Error: Variable '" << name << "' not found." << std::endl;
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    bool variableExists(const std::string& name) const {
+        return variables.find(name) != variables.end();
+    }
+
+    void printAllVariables() const {
+        std::cout << "\nVariable Values:\n";
+        for (const auto& entry : variables) {
+            std::cout << entry.first << ": " << entry.second << std::endl;
+        }
+    }
+};
+
 class Lexer {
 private:
     std::ifstream inputFile;
@@ -103,7 +133,7 @@ public:
         return Token(END, "");
     }
 
-    void printSymbolTable() {
+    void printSymbolTable() const {
         std::cout << "\nSymbol Table:\n";
         for (const auto& entry : symbolTable) {
             std::cout << "Token Name: " << entry.first << std::endl;
@@ -180,9 +210,11 @@ class RecursiveDescentParser {
 private:
     Lexer& lexer;
     Token currentToken;
+    RuntimeEnvironment env;
+    bool hadError;
 
 public:
-    RecursiveDescentParser(Lexer& lexer) : lexer(lexer) {
+    RecursiveDescentParser(Lexer& lexer) : lexer(lexer), hadError(false) {
         
         currentToken = lexer.getNextToken();
     }
@@ -191,6 +223,12 @@ public:
         parseStatementList();
         match(END);
         std::cout << "Parsing successful!" << std::endl;
+    }
+
+    void evaluateProgram() {
+        if (!hadError) {
+            env.printAllVariables();
+        }
     }
 
 private:
@@ -210,43 +248,95 @@ private:
     }
 
     void parseAssignment() {
+        std::string varName = currentToken.value;
         match(IDENTIFIER);
 
-        if (currentToken.type == OPERATOR && isCompoundAssignment(currentToken.value)) {
+        if (currentToken.type == OPERATOR) {
+            std::string op = currentToken.value;
             match(OPERATOR);
-            parseExpression();
-        } else {
-            match(OPERATOR, "=");
-            parseExpression();
+            int rhs = parseExpression();
+
+            if (op == "=") {
+                env.setVariable(varName, rhs);
+            } else if (env.variableExists(varName)) {
+                if (op == "+=") {
+                    env.setVariable(varName, env.getVariable(varName) + rhs);
+                } else if (op == "-=") {
+                    env.setVariable(varName, env.getVariable(varName) - rhs);
+                } else if (op == "*=") {
+                    env.setVariable(varName, env.getVariable(varName) * rhs);
+                } else if (op == "/=") {
+                    if (rhs == 0) {
+                        reportError("Division by zero", currentToken);
+                    }
+                    env.setVariable(varName, env.getVariable(varName) / rhs);
+                } else {
+                    reportError("Invalid assignment operator", currentToken);
+                }
+            } else {
+                reportError("Variable not found", currentToken);
+            }
         }
     }
 
-    void parseExpression() {
-        parseTerm();
+    int parseExpression() {
+        int result = parseTerm();
         while (currentToken.type == OPERATOR && (currentToken.value == "+" || currentToken.value == "-")) {
+            std::string op = currentToken.value;
             match(OPERATOR);
-            parseTerm();
+            int term = parseTerm();
+
+            if (op == "+") {
+                result += term;
+            } else if (op == "-") {
+                result -= term;
+            }
         }
+        return result;
     }
 
-    void parseTerm() {
-        parseFactor();
+    int parseTerm() {
+        int result = parseFactor();
         while (currentToken.type == OPERATOR && (currentToken.value == "*" || currentToken.value == "/")) {
+            std::string op = currentToken.value;
             match(OPERATOR);
-            parseFactor();
+            int factor = parseFactor();
+
+            if (op == "*") {
+                result *= factor;
+            } else if (op == "/") {
+                if (factor == 0) {
+                    reportError("Division by zero", currentToken);
+                }
+                result /= factor;
+            }
         }
+        return result;
     }
 
-    void parseFactor() {
-        if (currentToken.type == IDENTIFIER || currentToken.type == CONSTANT) {
-            match(currentToken.type);
+    int parseFactor() {
+        if (currentToken.type == IDENTIFIER) {
+            std::string varName = currentToken.value;
+            match(IDENTIFIER);
+
+            if (env.variableExists(varName)) {
+                return env.getVariable(varName);
+            } else {
+                reportError("Variable not found", currentToken);
+            }
+        } else if (currentToken.type == CONSTANT) {
+            int constantValue = std::stoi(currentToken.value);
+            match(CONSTANT);
+            return constantValue;
         } else if (currentToken.type == SPECIAL_CHARACTER && currentToken.value == "(") {
             match(SPECIAL_CHARACTER);
-            parseExpression();
+            int expressionValue = parseExpression();
             match(SPECIAL_CHARACTER, ")");
+            return expressionValue;
         } else {
             reportError("Expected identifier, constant, or '(' for factor", currentToken);
         }
+        return 0; 
     }
 
     void match(TokenType expectedType, const std::string& expectedValue = "") {
@@ -261,11 +351,7 @@ private:
     void reportError(const std::string& message, const Token& token) {
         std::cerr << "Error: " << message << ". Found " << getTokenTypeName(token.type)
                   << " '" << token.value << "' at line " << token.lineNumber << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    bool isCompoundAssignment(const std::string& op) {
-        return op == "+=" || op == "-=" || op == "*=" || op == "/=";
+        hadError = true;
     }
 };
 
@@ -290,6 +376,7 @@ int main() {
 
                 parser.parseProgram();
                 lexer.printSymbolTable();
+                parser.evaluateProgram();
                 break;
             }
             case 2:
