@@ -88,14 +88,18 @@ private:
     std::ifstream inputFile;
     size_t lineNumber;
     std::unordered_map<std::string, std::vector<Token>> symbolTable;
+    bool fileOpenError;
 
 public:
     Lexer(const std::string& filename) : inputFile(appendExtension(filename)), lineNumber(1) {
-        if (!inputFile.is_open()) {
-            std::cerr << "Error opening file: " << filename << std::endl;
-            exit(EXIT_FAILURE);
-        }
+    if (!inputFile.is_open()) {
+        std::cerr << "Error opening file: " << filename << std::endl;
+        fileOpenError = true;
+    } else {
+        fileOpenError = false;
     }
+}
+
 
     Token getNextToken() {
         char currentChar;
@@ -143,6 +147,10 @@ public:
         }
     }
 }
+
+        bool hasFileOpenError() const {
+        return fileOpenError;
+    }
 
 
 private:
@@ -209,7 +217,7 @@ Token insertIntoSymbolTable(TokenType type, const std::string& value, size_t lin
     }
 };
 
-// ... (unchanged code above)
+
 
 class RecursiveDescentParser {
 private:
@@ -220,7 +228,7 @@ private:
 
 public:
     RecursiveDescentParser(Lexer& lexer) : lexer(lexer), hadError(false) {
-        // Initialize with the first token
+        
         currentToken = lexer.getNextToken();
     }
 
@@ -244,14 +252,14 @@ public:
 
 private:
     void parseStatementList() {
-        while (currentToken.type != END && !hadError) {  // Check for hadError
+        while (currentToken.type != END && !hadError) {
             parseStatement();
             match(PUNCTUATION_SYMBOL, ";");
         }
     }
 
     void parseStatement() {
-        if (hadError) return;  // Check if hadError is true before parsing
+        if (hadError) return;  
 
         if (currentToken.type == IDENTIFIER) {
             parseAssignment();
@@ -261,7 +269,7 @@ private:
     }
 
     void parseAssignment() {
-        if (hadError) return;  // Check if hadError is true before parsing
+        if (hadError) return;  
 
         std::string varName = currentToken.value;
         match(IDENTIFIER);
@@ -295,7 +303,7 @@ private:
     }
 
     float parseExpression() {
-        if (hadError) return 0;  // Return a default value if there's an error
+        if (hadError) return 0;  
 
         float result = parseTerm();
         while (currentToken.type == OPERATOR && (currentToken.value == "+" || currentToken.value == "-")) {
@@ -313,7 +321,7 @@ private:
     }
 
     float parseTerm() {
-        if (hadError) return 0;  // Return a default value if there's an error
+        if (hadError) return 0;  
 
         float result = parseFactor();
         while (currentToken.type == OPERATOR && (currentToken.value == "*" || currentToken.value == "/")) {
@@ -334,7 +342,7 @@ private:
     }
 
     float parseFactor() {
-        if (hadError) return 0;  // Return a default value if there's an error
+        if (hadError) return 0;  
 
         if (currentToken.type == IDENTIFIER) {
             std::string varName = currentToken.value;
@@ -357,11 +365,11 @@ private:
         } else {
             reportError("Expected identifier, constant, or '(' for factor", currentToken);
         }
-        return 0;  // This return is just to satisfy the compiler; it should never be reached.
+        return 0;  
     }
 
     void match(TokenType expectedType, const std::string& expectedValue = "") {
-        if (hadError) return;  // Check if hadError is true before parsing
+        if (hadError) return;  
 
         if (currentToken.type == expectedType && (expectedValue.empty() || currentToken.value == expectedValue)) {
             std::cout << "Matched: " << getTokenTypeName(expectedType) << ", Value: " << currentToken.value << std::endl;
@@ -375,11 +383,11 @@ private:
         std::cerr << "Error: " << message << ". Found " << getTokenTypeName(token.type)
                   << " '" << token.value << "' at line " << token.lineNumber << std::endl;
         hadError = true;
-        // Optional: Implement error recovery or consume tokens until a recovery point
+        
     }
 };
 
-// ... (unchanged code below)
+
 
 
 int main() {
@@ -400,6 +408,11 @@ int main() {
                 std::cin >> filename;
 
                 Lexer lexer(filename);
+
+                if (lexer.hasFileOpenError()) {
+                    std::cout << "File opening failed. Please check the filename and try again." << std::endl;
+                    break;
+                }
 
                 RecursiveDescentParser parser(lexer);
 
