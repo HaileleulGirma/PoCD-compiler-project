@@ -2,7 +2,7 @@
 #include <fstream>
 #include <cctype>
 #include <string>
-#include <unordered_map>
+#include <unordered_map>a
 #include <vector>
 
 enum TokenType {
@@ -206,6 +206,8 @@ private:
     }
 };
 
+
+
 class RecursiveDescentParser {
 private:
     Lexer& lexer;
@@ -220,10 +222,16 @@ public:
     }
 
     void parseProgram() {
-        parseStatementList();
+    parseStatementList();
+
+    if (!hadError) {
         match(END);
         std::cout << "Parsing successful!" << std::endl;
+    } else {
+        std::cout << "Parsing failed due to errors." << std::endl;
     }
+}
+
 
     void evaluateProgram() {
         if (!hadError) {
@@ -233,13 +241,15 @@ public:
 
 private:
     void parseStatementList() {
-        while (currentToken.type != END) {
+        while (currentToken.type != END && !hadError) {  
             parseStatement();
             match(PUNCTUATION_SYMBOL, ";");
         }
     }
 
     void parseStatement() {
+        if (hadError) return;  
+
         if (currentToken.type == IDENTIFIER) {
             parseAssignment();
         } else {
@@ -248,6 +258,8 @@ private:
     }
 
     void parseAssignment() {
+        if (hadError) return;  
+
         std::string varName = currentToken.value;
         match(IDENTIFIER);
 
@@ -280,6 +292,8 @@ private:
     }
 
     int parseExpression() {
+        if (hadError) return 0;  
+
         int result = parseTerm();
         while (currentToken.type == OPERATOR && (currentToken.value == "+" || currentToken.value == "-")) {
             std::string op = currentToken.value;
@@ -296,6 +310,8 @@ private:
     }
 
     int parseTerm() {
+        if (hadError) return 0;  
+
         int result = parseFactor();
         while (currentToken.type == OPERATOR && (currentToken.value == "*" || currentToken.value == "/")) {
             std::string op = currentToken.value;
@@ -315,6 +331,8 @@ private:
     }
 
     int parseFactor() {
+        if (hadError) return 0;  
+
         if (currentToken.type == IDENTIFIER) {
             std::string varName = currentToken.value;
             match(IDENTIFIER);
@@ -336,10 +354,12 @@ private:
         } else {
             reportError("Expected identifier, constant, or '(' for factor", currentToken);
         }
-        return 0; 
+        return 0;  
     }
 
     void match(TokenType expectedType, const std::string& expectedValue = "") {
+        if (hadError) return;  
+
         if (currentToken.type == expectedType && (expectedValue.empty() || currentToken.value == expectedValue)) {
             std::cout << "Matched: " << getTokenTypeName(expectedType) << ", Value: " << currentToken.value << std::endl;
             currentToken = lexer.getNextToken();
@@ -352,8 +372,12 @@ private:
         std::cerr << "Error: " << message << ". Found " << getTokenTypeName(token.type)
                   << " '" << token.value << "' at line " << token.lineNumber << std::endl;
         hadError = true;
+        
     }
 };
+
+
+
 
 int main() {
     int choice;
@@ -372,10 +396,11 @@ int main() {
                 std::cin >> filename;
 
                 Lexer lexer(filename);
+                lexer.printSymbolTable();
                 RecursiveDescentParser parser(lexer);
 
                 parser.parseProgram();
-                lexer.printSymbolTable();
+
                 parser.evaluateProgram();
                 break;
             }
